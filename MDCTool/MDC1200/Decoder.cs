@@ -273,6 +273,63 @@ namespace MDCTool.MDC1200
         }
 
         /// <summary>
+        /// Internal helper to handle convolutional encoding for error detection.
+        /// </summary>
+        /// <param name="data"></param>
+        private void ECC(ref byte[] data)
+        {
+            int b;
+            int[] csr = new int[7];
+            int syn;
+            byte fixi, fixj;
+            int ec;
+
+            syn = 0;
+            for (int i = 0; i < 7; i++)
+                csr[i] = 0;
+
+            for (byte i = 0; i < 7; i++)
+            {
+                for (byte j = 0; j <= 7; j++)
+                {
+                    for (int k = 6; k > 0; k--)
+                        csr[k] = csr[k - 1];
+
+                    csr[0] = (data[i] >> j) & 0x01;
+                    b = csr[0] + csr[2] + csr[5] + csr[6];
+                    syn <<= 1;
+                    if (((b & 0x01) ^ ((data[i + 7] >> j) & 0x01)) > 0)
+                        syn |= 1;
+
+                    ec = 0;
+                    if ((syn & 0x80) > 0)
+                        ++ec;
+                    if ((syn & 0x20) > 0)
+                        ++ec;
+                    if ((syn & 0x04) > 0)
+                        ++ec;
+                    if ((syn & 0x02) > 0)
+                        ++ec;
+
+                    if (ec >= 3)
+                    {
+                        syn ^= 0xa6;
+                        fixi = i;
+                        fixj = (byte)(j - 7);
+                        if (fixj < 0)
+                        {
+                            --fixi;
+                            fixj += 8;
+                        }
+
+                        if (fixi >= 0)
+                            data[fixi] ^= (byte)(1 << fixj); // flip
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Internal function to process the bits of a MDC1200 data stream.
         /// </summary>
         /// <param name="idx">Decoder Index</param>
@@ -309,6 +366,8 @@ namespace MDCTool.MDC1200
                         data[i] |= (byte)(1 << j);
                 }
             }
+
+            ECC(ref data);
 
             // compute CRC
             ccrc = ComputeCRC(data, 4);
