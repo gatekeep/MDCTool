@@ -93,6 +93,7 @@ namespace MDCTool.MDC1200
          */
         private double incr;                    //
         private int frameCount;                 // number of frames in MDC packet
+        private bool inDouble;                  //
 
         private double[] th;                    //
 
@@ -393,6 +394,7 @@ namespace MDCTool.MDC1200
                         this.shstate[k] = 0;
 
                     this.frameCount = 2;
+                    this.inDouble = false;
                 }
                 else
                 {
@@ -403,29 +405,38 @@ namespace MDCTool.MDC1200
                     first.Argument = data[1];
                     first.UnitID = (ushort)((data[2] << 8) | data[3]);
                     crc = (byte)((data[4] << 8) | data[5]);
-    
-                    // reset the states for all decoders
-                    for(int k = 0; k < MDC_ND; k++)
-                        this.shstate[k] = 0;
 
-                    // check if the operation code is for a "double" packet
-                    switch(data[0])
+                    if (!inDouble)
                     {
-                    case OpType.DOUBLE_PACKET_TYPE1:
-                    case OpType.DOUBLE_PACKET_TYPE2:
+                        // check if the operation code is for a "double" packet
+                        switch (data[0])
                         {
-                            // we have a double packet reset the frame count to 0
-                            // and set the state to reflect a double packet
-                            this.frameCount = 0;
-                            this.shstate[idx] = 2;
-                            this.shcount[idx] = 0;
+                            case OpType.DOUBLE_PACKET_TYPE1:
+                            case OpType.DOUBLE_PACKET_TYPE2:
+                                {
+                                    // we have a double packet reset the frame count to 0
+                                    // and set the state to reflect a double packet
+                                    this.frameCount = 0;
+                                    this.inDouble = true;
+                                    this.shstate[idx] = 2;
+                                    this.shcount[idx] = 0;
 
-                            ClearBits(idx);
+                                    ClearBits(idx);
+                                }
+                                break;
+
+                            default:
+                                // reset the states for all decoders
+                                for (int k = 0; k < MDC_ND; k++)
+                                    this.shstate[k] = 0;
+                                break;
                         }
-                        break;
-
-                    default:
-                        break;
+                    }
+                    else
+                    {
+                        this.shstate[idx] = 2;
+                        this.shcount[idx] = 0;
+                        ClearBits(idx);
                     }
                 }
 
@@ -434,6 +445,12 @@ namespace MDCTool.MDC1200
                 {
                     Messages.Trace("Frame Count: " + frameCount);
                     Messages.Trace("MDC Frame 1 = " + ToString(first));
+
+                    if (inDouble && frameCount <= 1)
+                    {
+                        this.frameCount = 0;
+                        return true;
+                    }
 
                     // if we have a frame count of > 1 then display second packet data
                     if (this.frameCount > 1)
@@ -447,6 +464,10 @@ namespace MDCTool.MDC1200
 
                     // reset frame count
                     this.frameCount = 0;
+
+                    // reset the states for all decoders
+                    for (int k = 0; k < MDC_ND; k++)
+                        this.shstate[k] = 0;
                 }
 
                 return true;
